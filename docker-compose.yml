@@ -1,0 +1,25 @@
+services:
+  mcp-wow-profile:
+    build: .
+    container_name: mcp-wow-profile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    # Optional: persistent cache volume
+    # volumes:
+    #   - cache-data:/app/data/cache
+    # For stdio transport, stdin/stdout must stay attached.
+    # If using HTTP transport, expose the port instead:
+    # ports:
+    #   - "3000:3000"
+    stdin_open: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# volumes:
+#   cache-data:
