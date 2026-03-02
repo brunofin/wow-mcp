@@ -1,14 +1,13 @@
 import pino from 'pino';
-import { loadEnv } from '../config/env.js';
-
-const env = loadEnv();
 
 /**
  * Application logger.
  * Writes to stderr so stdout stays clean for MCP stdio transport.
+ * Reads LOG_LEVEL directly from process.env so it can be imported
+ * before loadEnv() has run (e.g. in tests).
  */
 export const logger = pino({
-  level: env.LOG_LEVEL,
+  level: process.env['LOG_LEVEL'] ?? 'info',
   transport:
     process.env.NODE_ENV !== 'production'
       ? { target: 'pino/file', options: { destination: 2 } } // fd 2 = stderr

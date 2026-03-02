@@ -22,6 +22,7 @@ npm start          # stdio transport
 npm run dev        # runs via tsx (no build step)
 npm run inspect    # opens MCP Inspector UI
 npm run lint       # type-check only
+npm test           # run auth integration tests
 ```
 
 ## API coverage
@@ -48,6 +49,14 @@ See [`.env.example`](.env.example). Only two are required:
 - `BNET_CLIENT_ID` — Battle.net OAuth client ID
 - `BNET_CLIENT_SECRET` — Battle.net OAuth client secret
 
+Optional auth (OAuth2 client-credentials for the MCP HTTP endpoint):
+
+- `MCP_CLIENT_ID` — when set (with `MCP_CLIENT_SECRET`), the `/mcp` endpoint requires a Bearer token
+- `MCP_CLIENT_SECRET` — shared secret for token exchange
+- `MCP_TOKEN_TTL_SECONDS` — access token lifetime (default: `3600`)
+
+To obtain a token, `POST /token` with `grant_type=client_credentials` and your `client_id` + `client_secret` (form body or HTTP Basic). If neither `MCP_CLIENT_ID` nor `MCP_CLIENT_SECRET` is set, the server runs without auth.
+
 Optional tuning:
 
 - `LOG_LEVEL` — pino log level (default: `info`)
@@ -55,6 +64,20 @@ Optional tuning:
 - `HTTP_RETRY_LIMIT` — retry count (default: `2`)
 - `CACHE_TTL_SECONDS` — response cache TTL (default: `300`)
 - `CACHE_SIZE` — max cached entries (default: `500`)
+
+## Testing
+
+```bash
+npm test
+```
+
+Integration tests use Node's built-in test runner (`node:test`) via `tsx` — no extra test dependencies. The suite spins up the server on a random port with test credentials and verifies OAuth2 auth end-to-end:
+
+- Rejects `/mcp` without a token (401)
+- Rejects `/token` with wrong credentials (401)
+- Issues a token with correct credentials (200)
+- Allows `/mcp` with a valid bearer token (200)
+- Rejects `/mcp` with a bogus token (401)
 
 ## Docker
 
@@ -69,7 +92,9 @@ Secrets are injected via `.env` on the host (not committed). The container runs 
 
 ```
 src/
-  index.ts                          # MCP bootstrap (stdio)
+  index.ts                          # entry point — loads env, starts server
+  app.ts                            # HTTP server factory (/mcp, /token, /health)
+  auth.ts                           # OAuth2 client-credentials token endpoint + bearer validation
   config/
     env.ts                          # zod env parsing (credentials + tuning)
     regions.ts                      # region enum, API hosts, OAuth URL
@@ -93,6 +118,8 @@ src/
     http.ts                         # got defaults
     cache.ts                        # TTL cache
     logger.ts                       # pino (stderr)
+test/
+  auth.test.ts                      # OAuth2 auth integration tests
 ```
 
 Endpoints are defined declaratively in `gamedata.ts` and `profileEndpoints.ts`. Each entry specifies a tool name, path template, namespace type, and zod input schema. The `tools.ts` module iterates over the registry and auto-registers every entry as an MCP tool, injecting `region` and `locale` parameters automatically.

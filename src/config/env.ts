@@ -10,6 +10,11 @@ const envSchema = z.object({
   HTTP_RETRY_LIMIT: z.coerce.number().int().min(0).default(2),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(0).default(300),
   CACHE_SIZE: z.coerce.number().int().min(0).default(500),
+  // Optional OAuth2 client-credentials auth for the MCP HTTP endpoint.
+  // When both are set, /mcp requires a Bearer token obtained from POST /token.
+  MCP_CLIENT_ID: z.string().min(1).optional(),
+  MCP_CLIENT_SECRET: z.string().min(1).optional(),
+  MCP_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
 });
 
 export type Env = z.infer<typeof envSchema>;
