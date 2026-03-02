@@ -7,14 +7,8 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-    # Optional: persistent cache volume
-    # volumes:
-    #   - cache-data:/app/data/cache
-    # For stdio transport, stdin/stdout must stay attached.
-    # If using HTTP transport, expose the port instead:
-    # ports:
-    #   - "3000:3000"
-    stdin_open: true
+    ports:
+      - "3000:3000"
     logging:
       driver: json-file
       options:
