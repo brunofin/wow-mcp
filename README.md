@@ -51,7 +51,7 @@ See [`.env.example`](.env.example). Only two are required:
 
 Optional auth (OAuth 2.1 for the MCP HTTP endpoint):
 
-- `MCP_AUTH_SECRET` — passphrase that enables OAuth. Used as the login on the `/authorize` page (for ChatGPT / browser clients) and as the `client_secret` for `client_credentials` grants (for Warp / CLI).
+- `MCP_AUTH_SECRET` — passphrase that enables OAuth. Used as the login on the `/authorize` page (for ChatGPT / browser clients), as the `client_secret` for `client_credentials` grants, and directly as a static `Bearer` token for simple clients (Warp, curl, etc.).
 - `MCP_TOKEN_TTL_SECONDS` — access token lifetime (default: `3600`)
 
 When `MCP_AUTH_SECRET` is set, the server exposes a full OAuth 2.1 provider:
@@ -61,6 +61,8 @@ When `MCP_AUTH_SECRET` is set, the server exposes a full OAuth 2.1 provider:
 - `POST /register` — RFC 7591 dynamic client registration
 - `GET|POST /authorize` — authorization code + PKCE flow with passphrase login
 - `POST /token` — supports `authorization_code` (with PKCE) and `client_credentials` grants
+
+The `MCP_AUTH_SECRET` value can also be passed directly as a `Bearer` token (e.g. `Authorization: Bearer <your-secret>`) — useful for clients like Warp that don't support OAuth flows.
 
 If `MCP_AUTH_SECRET` is not set, the server runs without auth.
 
@@ -87,6 +89,7 @@ Integration tests use Node's built-in test runner (`node:test`) via `tsx` — no
 - Rejects `client_credentials` with wrong secret (401)
 - Issues token via `client_credentials` with correct secret (200)
 - Completes full authorization_code + PKCE flow (register → authorize → token → /mcp)
+- Allows `/mcp` with `MCP_AUTH_SECRET` as a static bearer token (200)
 - Rejects `/mcp` with a bogus token (401)
 
 ## Docker

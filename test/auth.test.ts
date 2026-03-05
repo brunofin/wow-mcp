@@ -218,6 +218,23 @@ describe('OAuth 2.1 auth', () => {
     assert.ok(mcpText.includes('"mcp-wow-profile"'));
   });
 
+  // ── Static secret as bearer token (Warp / simple clients) ──────────────
+
+  it('allows /mcp with MCP_AUTH_SECRET as a static bearer token (200)', async () => {
+    const res = await fetch(`${baseUrl}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'Authorization': `Bearer ${TEST_AUTH_SECRET}`,
+      },
+      body: MCP_INIT_BODY,
+    });
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.ok(text.includes('"mcp-wow-profile"'));
+  });
+
   // ── Bogus token ───────────────────────────────────────────────────────────
 
   it('rejects /mcp with a bogus token (401)', async () => {

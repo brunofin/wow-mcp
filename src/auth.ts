@@ -385,6 +385,11 @@ export function validateBearerToken(env: Env, req: IncomingMessage): boolean {
   const [scheme, token] = auth.split(' ', 2);
   if (!scheme || scheme.toLowerCase() !== 'bearer' || !token) return false;
 
+  // Allow the raw MCP_AUTH_SECRET as a static bearer token (never expires).
+  // This is the simplest auth path for clients that don't support OAuth (e.g. Warp).
+  if (safeEqual(token, env.MCP_AUTH_SECRET ?? '')) return true;
+
+  // Otherwise check the issued-token store.
   const rec = tokenStore.get(token);
   if (!rec) return false;
   if (rec.expiresAtMs <= Date.now()) {
