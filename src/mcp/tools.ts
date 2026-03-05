@@ -16,6 +16,7 @@ import { toAchievementsTimeline } from '../blizzard/dto/timeline.js';
 import { characterInputSchema } from './schemas.js';
 import { logger } from '../util/logger.js';
 import type { Env } from '../config/env.js';
+import { enrichTimestamps } from '../util/timestamps.js';
 
 // ── Helpers ────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ function registerEndpoint(
           searchParams,
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify(enrichTimestamps(data), null, 2) }],
         };
       } catch (err: unknown) {
         logger.error({ err, tool: ep.toolName }, 'Tool call failed');
@@ -127,7 +128,7 @@ function registerCustomTools(
         );
         return {
           content: [
-            { type: 'text', text: JSON.stringify(timeline, null, 2) },
+            { type: 'text', text: JSON.stringify(enrichTimestamps(timeline), null, 2) },
           ],
         };
       } catch (err: unknown) {
