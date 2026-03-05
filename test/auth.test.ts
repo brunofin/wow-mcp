@@ -42,7 +42,7 @@ describe('OAuth 2.1 auth', () => {
   let baseUrl: string;
 
   before(async () => {
-    server = createApp(testEnv);
+    server = await createApp(testEnv);
     await new Promise<void>((resolve) => {
       server.listen(0, '127.0.0.1', () => {
         const { port } = server.address() as AddressInfo;

@@ -17,6 +17,10 @@ const envSchema = z.object({
   // and also serves as the client_secret for client_credentials grants.
   MCP_AUTH_SECRET: z.string().min(1).optional(),
   MCP_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+  // Optional PostgreSQL connection string for persistent OAuth stores.
+  // When set, tokens/clients/auth codes survive restarts.
+  // When absent, in-memory stores are used (default).
+  DATABASE_URL: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -7,7 +7,7 @@ const PORT = parseInt(process.env['PORT'] ?? '3000', 10);
 const HOST = process.env['HOST'] ?? '0.0.0.0';
 
 const env = loadEnv();
-const server = createApp(env);
+const server = await createApp(env);
 
 server.listen(PORT, HOST, () => {
   logger.info('MCP server listening on http://%s:%d/mcp', HOST, PORT);

@@ -53,6 +53,7 @@ Optional auth (OAuth 2.1 for the MCP HTTP endpoint):
 
 - `MCP_AUTH_SECRET` — passphrase that enables OAuth. Used as the login on the `/authorize` page (for ChatGPT / browser clients), as the `client_secret` for `client_credentials` grants, and directly as a static `Bearer` token for simple clients (Warp, curl, etc.).
 - `MCP_TOKEN_TTL_SECONDS` — access token lifetime (default: `3600`)
+- `DATABASE_URL` — PostgreSQL connection string (e.g. `postgresql://user:pass@host:5432/db`). When set, OAuth tokens, clients, and auth codes are persisted in PostgreSQL so they survive restarts. When absent, in-memory stores are used. The `docker-compose.yml` sets this up automatically.
 
 When `MCP_AUTH_SECRET` is set, the server exposes a full OAuth 2.1 provider:
 
@@ -101,6 +102,8 @@ docker compose up -d
 
 Secrets are injected via `.env` on the host (not committed). The container runs as a non-root user with production dependencies only.
 
+The compose stack includes a PostgreSQL instance for persistent OAuth token storage. Data is kept in a `pgdata` Docker volume. `DATABASE_URL` is pre-configured automatically.
+
 ## Architecture
 
 ```
@@ -111,6 +114,11 @@ src/
   config/
     env.ts                          # zod env parsing (credentials + tuning)
     regions.ts                      # region enum, API hosts, OAuth URL
+  store/
+    types.ts                        # OAuthStore interface + record types
+    memory.ts                       # in-memory store (default)
+    postgres.ts                     # PostgreSQL store (when DATABASE_URL set)
+    index.ts                        # factory — picks store based on env
   mcp/
     tools.ts                        # auto-registers all endpoints + custom tools
     schemas.ts                      # shared zod input schemas

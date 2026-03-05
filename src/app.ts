@@ -7,6 +7,7 @@ import {
   handleProtectedResourceMetadata,
   handleRegister,
   handleTokenRequest,
+  initAuthStore,
   isAuthEnabled,
   validateBearerToken,
   getBaseUrl,
@@ -39,7 +40,8 @@ function createMcpHandler(env: Env) {
  * Create the HTTP server with all routes wired up.
  * Does NOT call `.listen()` — the caller decides the port.
  */
-export function createApp(env: Env): Server {
+export async function createApp(env: Env): Promise<Server> {
+  await initAuthStore(env);
   const handleMcp = createMcpHandler(env);
 
   if (isAuthEnabled(env)) {
@@ -110,7 +112,7 @@ export function createApp(env: Env): Server {
 
     // ── MCP endpoint — Streamable HTTP (POST + GET + DELETE) ─────────────
     if (url.pathname === '/mcp') {
-      if (!validateBearerToken(env, req)) {
+      if (!(await validateBearerToken(env, req))) {
         const base = getBaseUrl(req);
         res.writeHead(401, {
           'Content-Type': 'application/json',

@@ -1,12 +1,37 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: mcp-wow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wow_mcp
+      POSTGRES_PASSWORD: wow_mcp
+      POSTGRES_DB: wow_mcp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wow_mcp"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   mcp-wow-profile:
     build: .
     container_name: mcp-wow-profile
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       - NODE_ENV=production
+      - DATABASE_URL=postgresql://wow_mcp:wow_mcp@postgres:5432/wow_mcp
     ports:
       - "3000:3000"
     logging:
@@ -15,5 +40,5 @@ services:
         max-size: "10m"
         max-file: "3"
 
-# volumes:
-#   cache-data:
+volumes:
+  pgdata:

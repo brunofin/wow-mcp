@@ -8,13 +8,13 @@
  *  - OAuth 2.1 Authorization Code + PKCE     (GET|POST /authorize, POST /token)
  *  - OAuth 2.0 Client Credentials grant      (POST /token) — fallback for CLI/Warp
  *
- * Everything is in-memory; nothing survives restarts (clients re-register, which
- * is expected by ChatGPT's per-session DCR model).
+ * Storage is delegated to an OAuthStore implementation (in-memory or PostgreSQL).
  */
 
 import crypto from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Env } from './config/env.js';
+import { createStore, type OAuthStore } from './store/index.js';
 import { logger } from './util/logger.js';
 
 // ── Env check ──────────────────────────────────────────────────────────────────
@@ -23,45 +23,25 @@ export function isAuthEnabled(env: Env): boolean {
   return Boolean(env.MCP_AUTH_SECRET);
 }
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Store lifecycle ────────────────────────────────────────────────────────────
 
-interface ClientRecord {
-  clientId: string;
-  redirectUris: string[];
-  clientName?: string;
-  grantTypes: string[];
-  responseTypes: string[];
-  tokenEndpointAuthMethod: string;
+let store: OAuthStore;
+let cleanupTimer: ReturnType<typeof setInterval> | undefined;
+
+/** Initialise the OAuth store. Must be called once before handling requests. */
+export async function initAuthStore(env: Env): Promise<void> {
+  store = await createStore(env);
+
+  // Periodic cleanup of expired auth codes & tokens
+  if (cleanupTimer) clearInterval(cleanupTimer);
+  cleanupTimer = setInterval(() => { void store.cleanup(); }, 60_000);
+  cleanupTimer.unref();
 }
 
-interface AuthCodeRecord {
-  clientId: string;
-  redirectUri: string;
-  codeChallenge: string;
-  codeChallengeMethod: string;
-  expiresAtMs: number;
-  scope?: string;
-}
-
-interface TokenRecord {
-  expiresAtMs: number;
-}
-
-// ── Stores ─────────────────────────────────────────────────────────────────────
-
-const clientStore = new Map<string, ClientRecord>();
-const authCodeStore = new Map<string, AuthCodeRecord>();
-const tokenStore = new Map<string, TokenRecord>();
-
-let cleanupStarted = false;
-function ensureCleanup(): void {
-  if (cleanupStarted) return;
-  cleanupStarted = true;
-  setInterval(() => {
-    const now = Date.now();
-    for (const [k, v] of authCodeStore) if (v.expiresAtMs <= now) authCodeStore.delete(k);
-    for (const [k, v] of tokenStore) if (v.expiresAtMs <= now) tokenStore.delete(k);
-  }, 60_000).unref();
+/** Shut down the store (pool connections, etc.). */
+export async function closeAuthStore(): Promise<void> {
+  if (cleanupTimer) { clearInterval(cleanupTimer); cleanupTimer = undefined; }
+  await store?.close();
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -163,8 +143,8 @@ export async function handleRegister(env: Env, req: IncomingMessage, res: Server
     typeof body['token_endpoint_auth_method'] === 'string' ? body['token_endpoint_auth_method'] : 'none';
 
   const clientId = crypto.randomUUID();
-  const record: ClientRecord = { clientId, redirectUris, clientName, grantTypes, responseTypes, tokenEndpointAuthMethod };
-  clientStore.set(clientId, record);
+  const record = { clientId, redirectUris, clientName, grantTypes, responseTypes, tokenEndpointAuthMethod };
+  await store.setClient(clientId, record);
 
   logger.info({ clientId, clientName }, 'Registered new OAuth client');
 
@@ -268,7 +248,7 @@ export async function handleAuthorize(env: Env, req: IncomingMessage, res: Serve
     }
 
     const code = crypto.randomBytes(32).toString('base64url');
-    authCodeStore.set(code, {
+    await store.setAuthCode(code, {
       clientId,
       redirectUri,
       codeChallenge,
@@ -276,7 +256,6 @@ export async function handleAuthorize(env: Env, req: IncomingMessage, res: Serve
       expiresAtMs: Date.now() + 10 * 60 * 1000,
       scope: scope || undefined,
     });
-    ensureCleanup();
 
     const redirect = new URL(redirectUri);
     redirect.searchParams.set('code', code);
@@ -293,8 +272,6 @@ export async function handleAuthorize(env: Env, req: IncomingMessage, res: Serve
 // ── Token Endpoint ─────────────────────────────────────────────────────────────
 
 export async function handleTokenRequest(env: Env, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  ensureCleanup();
-
   if (!isAuthEnabled(env)) { json(res, 404, { error: 'not_found' }); return; }
   if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST' }).end(); return; }
 
@@ -317,13 +294,13 @@ export async function handleTokenRequest(env: Env, req: IncomingMessage, res: Se
     const redirectUri = formParams.get('redirect_uri') ?? '';
     const clientId = formParams.get('client_id') ?? '';
 
-    const rec = authCodeStore.get(code);
+    const rec = await store.getAuthCode(code);
     if (!rec) {
       json(res, 400, { error: 'invalid_grant', error_description: 'Unknown or expired authorization code' });
       return;
     }
 
-    authCodeStore.delete(code);
+    await store.deleteAuthCode(code);
 
     if (rec.expiresAtMs <= Date.now()) {
       json(res, 400, { error: 'invalid_grant', error_description: 'Authorization code expired' });
@@ -341,7 +318,7 @@ export async function handleTokenRequest(env: Env, req: IncomingMessage, res: Se
     }
 
     const token = crypto.randomBytes(32).toString('base64url');
-    tokenStore.set(token, { expiresAtMs: Date.now() + ttlSeconds * 1000 });
+    await store.setToken(token, { expiresAtMs: Date.now() + ttlSeconds * 1000 });
 
     json(res, 200, {
       access_token: token,
@@ -361,7 +338,7 @@ export async function handleTokenRequest(env: Env, req: IncomingMessage, res: Se
     }
 
     const token = crypto.randomBytes(32).toString('base64url');
-    tokenStore.set(token, { expiresAtMs: Date.now() + ttlSeconds * 1000 });
+    await store.setToken(token, { expiresAtMs: Date.now() + ttlSeconds * 1000 });
 
     json(res, 200, {
       access_token: token,
@@ -376,7 +353,7 @@ export async function handleTokenRequest(env: Env, req: IncomingMessage, res: Se
 
 // ── Bearer Token Validation ────────────────────────────────────────────────────
 
-export function validateBearerToken(env: Env, req: IncomingMessage): boolean {
+export async function validateBearerToken(env: Env, req: IncomingMessage): Promise<boolean> {
   if (!isAuthEnabled(env)) return true;
 
   const auth = req.headers['authorization'];
@@ -390,10 +367,10 @@ export function validateBearerToken(env: Env, req: IncomingMessage): boolean {
   if (safeEqual(token, env.MCP_AUTH_SECRET ?? '')) return true;
 
   // Otherwise check the issued-token store.
-  const rec = tokenStore.get(token);
+  const rec = await store.getToken(token);
   if (!rec) return false;
   if (rec.expiresAtMs <= Date.now()) {
-    tokenStore.delete(token);
+    await store.deleteToken(token);
     return false;
   }
 

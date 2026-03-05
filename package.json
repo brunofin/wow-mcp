@@ -22,11 +22,13 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0",
     "got": "^14.4.0",
+    "pg": "^8.20.0",
     "pino": "^9.6.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.18.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
