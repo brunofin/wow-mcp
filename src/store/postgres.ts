@@ -11,8 +11,8 @@ export class PostgresStore implements OAuthStore {
     this.pool = new Pool({ connectionString });
   }
 
-  async init(): Promise<void> {
-    await this.pool.query(`
+  async init(maxRetries = 10, delayMs = 2000): Promise<void> {
+    const ddl = `
       CREATE TABLE IF NOT EXISTS oauth_clients (
         client_id              TEXT PRIMARY KEY,
         redirect_uris          TEXT[] NOT NULL DEFAULT '{}',
@@ -39,9 +39,22 @@ export class PostgresStore implements OAuthStore {
         expires_at_ms          BIGINT NOT NULL,
         created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
-    `);
+    `;
 
-    logger.info('PostgreSQL OAuth store initialised (tables ensured)');
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.pool.query(ddl);
+        logger.info('PostgreSQL OAuth store initialised (tables ensured)');
+        return;
+      } catch (err: unknown) {
+        const code = (err as { code?: string }).code;
+        if (attempt === maxRetries || (code !== 'ECONNREFUSED' && code !== 'ENOTFOUND')) {
+          throw err;
+        }
+        logger.warn('PostgreSQL not ready (attempt %d/%d), retrying in %dms…', attempt, maxRetries, delayMs);
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
   }
 
   // ── Clients ────────────────────────────────────────────────────────────────
