@@ -10,10 +10,12 @@ const envSchema = z.object({
   HTTP_RETRY_LIMIT: z.coerce.number().int().min(0).default(2),
   CACHE_TTL_SECONDS: z.coerce.number().int().min(0).default(300),
   CACHE_SIZE: z.coerce.number().int().min(0).default(500),
-  // Optional OAuth2 client-credentials auth for the MCP HTTP endpoint.
-  // When both are set, /mcp requires a Bearer token obtained from POST /token.
-  MCP_CLIENT_ID: z.string().min(1).optional(),
-  MCP_CLIENT_SECRET: z.string().min(1).optional(),
+  // Optional OAuth 2.1 auth for the MCP HTTP endpoint.
+  // When set, /mcp requires a Bearer token obtained via the OAuth authorization
+  // code + PKCE flow (ChatGPT, browser clients) or client_credentials grant (Warp, CLI).
+  // This value is the passphrase users enter on the /authorize login page,
+  // and also serves as the client_secret for client_credentials grants.
+  MCP_AUTH_SECRET: z.string().min(1).optional(),
   MCP_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
 });
 

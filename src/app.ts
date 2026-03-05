@@ -1,7 +1,16 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { handleTokenRequest, isAuthEnabled, validateBearerToken } from './auth.js';
+import {
+  handleAuthServerMetadata,
+  handleAuthorize,
+  handleProtectedResourceMetadata,
+  handleRegister,
+  handleTokenRequest,
+  isAuthEnabled,
+  validateBearerToken,
+  getBaseUrl,
+} from './auth.js';
 import type { Env } from './config/env.js';
 import { registerTools } from './mcp/tools.js';
 import { logger } from './util/logger.js';
@@ -34,9 +43,9 @@ export function createApp(env: Env): Server {
   const handleMcp = createMcpHandler(env);
 
   if (isAuthEnabled(env)) {
-    logger.info('OAuth2 client-credentials auth is ENABLED on /mcp');
+    logger.info('OAuth 2.1 auth is ENABLED (authorization_code + PKCE, client_credentials)');
   } else {
-    logger.warn('No MCP_CLIENT_ID / MCP_CLIENT_SECRET set — /mcp is UNAUTHENTICATED');
+    logger.warn('No MCP_AUTH_SECRET set — /mcp is UNAUTHENTICATED');
   }
 
   return createServer(async (req, res) => {
@@ -49,12 +58,22 @@ export function createApp(env: Env): Server {
       return;
     }
 
-    // OAuth2 token endpoint
-    if (url.pathname === '/token') {
+    // ── OAuth 2.1 discovery & endpoints ──────────────────────────────────
+    if (url.pathname === '/.well-known/oauth-protected-resource') {
+      handleProtectedResourceMetadata(env, req, res);
+      return;
+    }
+
+    if (url.pathname === '/.well-known/oauth-authorization-server') {
+      handleAuthServerMetadata(env, req, res);
+      return;
+    }
+
+    if (url.pathname === '/register') {
       try {
-        await handleTokenRequest(env, req, res);
+        await handleRegister(env, req, res);
       } catch (err) {
-        logger.error({ err }, '/token request error');
+        logger.error({ err }, '/register error');
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'server_error' }));
@@ -63,13 +82,39 @@ export function createApp(env: Env): Server {
       return;
     }
 
-    // MCP endpoint — Streamable HTTP (POST + GET + DELETE)
+    if (url.pathname === '/authorize') {
+      try {
+        await handleAuthorize(env, req, res);
+      } catch (err) {
+        logger.error({ err }, '/authorize error');
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end('Internal server error');
+        }
+      }
+      return;
+    }
+
+    if (url.pathname === '/token') {
+      try {
+        await handleTokenRequest(env, req, res);
+      } catch (err) {
+        logger.error({ err }, '/token error');
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'server_error' }));
+        }
+      }
+      return;
+    }
+
+    // ── MCP endpoint — Streamable HTTP (POST + GET + DELETE) ─────────────
     if (url.pathname === '/mcp') {
-      // Enforce bearer-token auth when credentials are configured.
       if (!validateBearerToken(env, req)) {
+        const base = getBaseUrl(req);
         res.writeHead(401, {
           'Content-Type': 'application/json',
-          'WWW-Authenticate': 'Bearer',
+          'WWW-Authenticate': `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource"`,
         });
         res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32600, message: 'Unauthorized' }, id: null }));
         return;

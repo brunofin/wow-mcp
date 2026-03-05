@@ -1,6 +1,6 @@
 # wow-mcp
 
-MCP server that wraps the **complete World of Warcraft retail API** (Game Data + Profile) as 197 MCP tools. Authenticates via OAuth 2.0 client credentials and is fully **region-agnostic** — every tool accepts `region` and `locale` as optional parameters, so a single server instance can query any region.
+MCP server that wraps the **complete World of Warcraft retail API** (Game Data + Profile) as 197 MCP tools. Supports **OAuth 2.1 authentication** (authorization code + PKCE for ChatGPT, client credentials for CLI tools) and is fully **region-agnostic** — every tool accepts `region` and `locale` as optional parameters, so a single server instance can query any region.
 
 ![screenshot](screenshot.png "Screenshot")
 
@@ -49,13 +49,20 @@ See [`.env.example`](.env.example). Only two are required:
 - `BNET_CLIENT_ID` — Battle.net OAuth client ID
 - `BNET_CLIENT_SECRET` — Battle.net OAuth client secret
 
-Optional auth (OAuth2 client-credentials for the MCP HTTP endpoint):
+Optional auth (OAuth 2.1 for the MCP HTTP endpoint):
 
-- `MCP_CLIENT_ID` — when set (with `MCP_CLIENT_SECRET`), the `/mcp` endpoint requires a Bearer token
-- `MCP_CLIENT_SECRET` — shared secret for token exchange
+- `MCP_AUTH_SECRET` — passphrase that enables OAuth. Used as the login on the `/authorize` page (for ChatGPT / browser clients) and as the `client_secret` for `client_credentials` grants (for Warp / CLI).
 - `MCP_TOKEN_TTL_SECONDS` — access token lifetime (default: `3600`)
 
-To obtain a token, `POST /token` with `grant_type=client_credentials` and your `client_id` + `client_secret` (form body or HTTP Basic). If neither `MCP_CLIENT_ID` nor `MCP_CLIENT_SECRET` is set, the server runs without auth.
+When `MCP_AUTH_SECRET` is set, the server exposes a full OAuth 2.1 provider:
+
+- `GET /.well-known/oauth-protected-resource` — RFC 9728 metadata
+- `GET /.well-known/oauth-authorization-server` — RFC 8414 metadata (includes `code_challenge_methods_supported: ["S256"]`)
+- `POST /register` — RFC 7591 dynamic client registration
+- `GET|POST /authorize` — authorization code + PKCE flow with passphrase login
+- `POST /token` — supports `authorization_code` (with PKCE) and `client_credentials` grants
+
+If `MCP_AUTH_SECRET` is not set, the server runs without auth.
 
 Optional tuning:
 
@@ -71,12 +78,15 @@ Optional tuning:
 npm test
 ```
 
-Integration tests use Node's built-in test runner (`node:test`) via `tsx` — no extra test dependencies. The suite spins up the server on a random port with test credentials and verifies OAuth2 auth end-to-end:
+Integration tests use Node's built-in test runner (`node:test`) via `tsx` — no extra test dependencies. The suite spins up the server on a random port with test credentials and verifies OAuth 2.1 auth end-to-end:
 
-- Rejects `/mcp` without a token (401)
-- Rejects `/token` with wrong credentials (401)
-- Issues a token with correct credentials (200)
-- Allows `/mcp` with a valid bearer token (200)
+- Serves `/.well-known/oauth-protected-resource` metadata
+- Serves `/.well-known/oauth-authorization-server` metadata with S256
+- Registers a new client via `POST /register`
+- Rejects `/mcp` without a token (401 with `resource_metadata` hint)
+- Rejects `client_credentials` with wrong secret (401)
+- Issues token via `client_credentials` with correct secret (200)
+- Completes full authorization_code + PKCE flow (register → authorize → token → /mcp)
 - Rejects `/mcp` with a bogus token (401)
 
 ## Docker
@@ -93,8 +103,8 @@ Secrets are injected via `.env` on the host (not committed). The container runs 
 ```
 src/
   index.ts                          # entry point — loads env, starts server
-  app.ts                            # HTTP server factory (/mcp, /token, /health)
-  auth.ts                           # OAuth2 client-credentials token endpoint + bearer validation
+  app.ts                            # HTTP server factory (all routes)
+  auth.ts                           # OAuth 2.1 provider (metadata, registration, authorize, token, bearer validation)
   config/
     env.ts                          # zod env parsing (credentials + tuning)
     regions.ts                      # region enum, API hosts, OAuth URL
