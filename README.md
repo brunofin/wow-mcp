@@ -102,7 +102,9 @@ docker compose up -d
 
 Secrets are injected via `.env` on the host (not committed). The container runs as a non-root user with production dependencies only.
 
-The compose stack includes a PostgreSQL instance for persistent OAuth token storage. Data is kept in a `pgdata` Docker volume. `DATABASE_URL` is pre-configured automatically.
+The compose stack includes a PostgreSQL instance for persistent OAuth token storage. PostgreSQL data is bind-mounted to `./data/postgres/` on the host (maps to `/var/lib/postgresql/data` inside the container), so it persists across container recreates, host reboots, and Docker engine upgrades. `DATABASE_URL` is pre-configured automatically.
+
+> **NAS / self-hosting note:** make sure the `data/postgres/` directory is on a reliable filesystem. Back up this folder to preserve all OAuth state.
 
 ## Architecture
 
